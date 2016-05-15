@@ -1,0 +1,10 @@
+### IPythonNotebook template
+# Temporary data
+.ipynb_checkpoints/
+
+# Created by .ignore support plugin (hsz.mobi)
+
+# ignore data files
+tmp/
+data/
+pypy-env/
