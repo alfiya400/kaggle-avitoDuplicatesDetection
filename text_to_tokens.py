@@ -98,9 +98,9 @@ class DataGenerator(object):
 if __name__ == '__main__':
     tokens_stream = DataGenerator(
         file_in='data/ItemInfo_train.csv',
-        column='description',
+        column='title',
         id='itemID',
         chunksize=1,
-        file_out='tmp/train_description_tokens.csv',
+        file_out='tmp/train_title_tokens.csv',
         rebuild=True
     )

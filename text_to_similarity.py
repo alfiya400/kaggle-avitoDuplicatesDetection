@@ -5,15 +5,12 @@ from gensim import models, corpora
 from gensim.matutils import cossim
 import pandas as pd
 
-from text_to_tokens import Tokenizer
 from tokens_to_lsi import timeit
 
 
-tokenizer = Tokenizer()
 dictionary = corpora.Dictionary.load('tmp/train.dict')
 tfidf = models.TfidfModel.load('tmp/train.tfidf')
 lsi = models.LsiModel.load('tmp/model.lsi')
-tfidf_corpus = corpora.MmCorpus('tmp/train_tfidf_corpus.mm')
 
 
 def tokens_to_lsi(s):
@@ -41,7 +38,7 @@ def title_similarity(t1, t2):
 
 
 @timeit
-def load_description(filepath):
+def load_tokens(filepath):
     ind = []
     tokens = []
     with open(filepath) as f:
@@ -56,14 +53,11 @@ if __name__ == '__main__':
         print(_)
 
     # load description
-    description = load_description('tmp/train_description_tokens.csv')
+    description = load_tokens('tmp/train_description_tokens.csv')
     print(description.head(5))
 
     # load title
-    title = pd.read_csv(
-        'data/ItemInfo_train.csv', index_col='itemID',
-        usecols=['itemID', 'title'], squeeze=True
-    )
+    title = load_tokens('tmp/train_title_tokens.csv')
     print(title.head(5))
 
     # calc similarities
@@ -76,12 +70,10 @@ if __name__ == '__main__':
             dict_reader = DictReader(f)
             for i, row in enumerate(dict_reader):
                 i1, i2 = int(row['itemID_1']), int(row['itemID_2'])
-                title1 = tokenizer.get_tokens(unicode(title[i1], 'utf-8'))
-                title2 = tokenizer.get_tokens(unicode(title[i2], 'utf-8'))
                 text_similarity.append(
                     [
                         description_similarity(description[i1], description[i2]),
-                        title_similarity(title1, title2)
+                        title_similarity(title[i1], title[i2])
                     ]
                 )
                 if not i % 10000:
