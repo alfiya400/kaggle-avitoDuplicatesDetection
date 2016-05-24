@@ -48,9 +48,12 @@ class Dictionary(object):
 
     @timeit
     def _init_dictionary(self):
+        print('Building dict')
         dictionary = corpora.Dictionary()
-        for chunk in self.tokens_stream:
-            dictionary.add_documents([chunk])
+        ts = time.time()
+        for i, chunk in enumerate(self.tokens_stream):
+            print('chunk {} retrieved {}'.format(i, time.time() - ts))
+            dictionary.add_documents(chunk, prune_at=None)
         dictionary.filter_extremes(no_below=50, no_above=0.8, keep_n=None)
         dictionary.save(self.output_file)
 
@@ -120,7 +123,7 @@ if __name__ == '__main__':
         column='description',
         id='itemID',
         chunksize=1,
-        file_out='tmp/train_description_tokens.csv',
+        file_out='tmp/description_tokens.csv',
         rebuild=False
     )
     # dict_ = Dictionary(tokens_stream)

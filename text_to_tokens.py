@@ -97,10 +97,21 @@ class DataGenerator(object):
 
 if __name__ == '__main__':
     tokens_stream = DataGenerator(
-        file_in='data/ItemInfo_train.csv',
+        file_in='data/ItemInfo_test.csv',
         column='title',
         id='itemID',
         chunksize=1,
-        file_out='tmp/train_title_tokens.csv',
+        file_out='tmp/test_title_tokens.csv',
         rebuild=True
     )
+
+    tokens_stream = DataGenerator(
+        file_in='data/ItemInfo_test.csv',
+        column='description',
+        id='itemID',
+        chunksize=1,
+        file_out='tmp/test_description_tokens.csv',
+        rebuild=True
+    )
+    # then run on bash
+    #  cat tmp/train_description_tokens.csv tmp/test_description_tokens.csv > tmp/description_tokens.csv

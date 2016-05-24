@@ -52,20 +52,21 @@ if __name__ == '__main__':
     for _ in lsi.print_topics(num_topics=15):
         print(_)
 
+    prefix = 'test'
     # load description
-    description = load_tokens('tmp/train_description_tokens.csv')
+    description = load_tokens('tmp/{}_description_tokens.csv'.format(prefix))
     print(description.head(5))
 
     # load title
-    title = load_tokens('tmp/train_title_tokens.csv')
+    title = load_tokens('tmp/{}_title_tokens.csv'.format(prefix))
     print(title.head(5))
 
     # calc similarities
     ts = time.time()
     text_similarity = []
-    with open('tmp/train_text_similarity.csv', "w") as f_out:
+    with open('tmp/{}_text_similarity.csv'.format(prefix), "w") as f_out:
         w = writer(f_out)
-        with open('data/ItemPairs_train.csv') as f:
+        with open('data/ItemPairs_{}.csv'.format(prefix)) as f:
 
             dict_reader = DictReader(f)
             for i, row in enumerate(dict_reader):
