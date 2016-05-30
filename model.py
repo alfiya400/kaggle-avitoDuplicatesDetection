@@ -81,7 +81,7 @@ if __name__ == '__main__':
     basic_stats(data, labels, categ)
     data[np.isnan(data)] = -1
 
-    model = DecisionTreeClassifier(max_depth=10, min_samples_leaf=1000)
+    model = RandomForestClassifier(min_samples_leaf=500, max_features=0.5)
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
     cross_val = cross_val_score(estimator=model, X=data, y=labels, scoring=scorer, verbose=2, n_jobs=3)
     print(cross_val)

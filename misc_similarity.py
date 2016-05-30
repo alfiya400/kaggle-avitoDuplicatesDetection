@@ -26,9 +26,9 @@ def retrieve_model(t):
     return model_descr.lower()
 
 
-def model_sim(t1, t2):
-    m1 = retrieve_model(t1)
-    m2 = retrieve_model(t2)
+def model_sim(m1, m2):
+    # m1 = t1 # retrieve_model(t1)
+    # m2 = t2 # retrieve_model(t2)
     return int((m1 in m2) or (m2 in m1))
 
 
@@ -41,48 +41,40 @@ def exact_sim(x1, x2):
         return 0
 
 if __name__ == "__main__":
-    prefix = 'train'
-    # load description
-    description = load_tokens('tmp/{}_description_tokens.csv'.format(prefix))
-    print(description.head(5))
+    for prefix in ['train', 'test']:
+        data = pd.read_csv(
+            'data/ItemInfo_{}.csv'.format(prefix), index_col='itemID',
+            usecols=["itemID", "lat", 'lon', 'price'], squeeze=True
+        )
+        print(data.head(5))
 
-    # load title
-    title = load_tokens('tmp/{}_title_tokens.csv'.format(prefix))
-    print(title.head(5))
+        # calc similarities
+        ts = time.time()
+        misc_similarity = []
+        with open('tmp/{}_misc_similarity.csv'.format(prefix), "w") as f_out:
+            w = writer(f_out)
+            with open('tmp/ItemPairs_{}.csv'.format(prefix)) as f:
 
-    data = pd.read_csv(
-        'data/ItemInfo_{}.csv'.format(prefix), index_col='itemID',
-        usecols=["itemID", "lat", 'lon', 'price'], squeeze=True
-    )
-    print(data.head(5))
+                dict_reader = DictReader(f)
+                for i, row in enumerate(dict_reader):
+                    i1, i2 = int(row['itemID_1']), int(row['itemID_2'])
+                    tl1, tl2 = len(row['t_text_1'].split()), len(row['t_text_2'].split())
+                    dl1, dl2 = len(row['d_text_1'].split()), len(row['d_text_2'].split())
+                    p1, p2 = data.loc[i1, 'price'], data.loc[i2, 'price']
+                    misc_similarity.append(
+                        [
+                            location_similarity(data.loc[i1, ["lat", "lon"]], data.loc[i1, ["lat", "lon"]]),
+                            min(dl1, dl2),
+                            min(tl1, tl2),
+                            model_sim(row['t_model_1'], row['t_model_2']),
+                            min(p1 / p2, p2 / p1) if p1 and p2 else -1 if not (p1 or p2) else -2
+                        ]
+                    )
+                    if not i % 100000:
+                        w.writerows(misc_similarity)
+                        misc_similarity = []
+                        print('{} {}'.format(i, time.time() - ts))
 
-    # calc similarities
-    ts = time.time()
-    misc_similarity = []
-    with open('tmp/{}_misc_similarity.csv'.format(prefix), "w") as f_out:
-        w = writer(f_out)
-        with open('data/ItemPairs_{}.csv'.format(prefix)) as f:
-
-            dict_reader = DictReader(f)
-            for i, row in enumerate(dict_reader):
-                i1, i2 = int(row['itemID_1']), int(row['itemID_2'])
-                tl1, tl2 = len(title[i1] or []), len(title[i2] or [])
-                dl1, dl2 = len(description[i1] or []), len(description[i2] or [])
-                p1, p2 = data.loc[i1, 'price'], data.loc[i2, 'price']
-                misc_similarity.append(
-                    [
-                        location_similarity(data.loc[i1, ["lat", "lon"]], data.loc[i1, ["lat", "lon"]]),
-                        min(dl1, dl2),
-                        min(tl1, tl2),
-                        model_sim(title[i1], title[i2]),
-                        min(p1 / p2, p2 / p1) if p1 and p2 else -1 if not (p1 or p2) else -2
-                    ]
-                )
-                if not i % 10000:
-                    w.writerows(misc_similarity)
-                    misc_similarity = []
-                    print('{} {}'.format(i, time.time() - ts))
-
-        w.writerows(misc_similarity)
+            w.writerows(misc_similarity)
 
 

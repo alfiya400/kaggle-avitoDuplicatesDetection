@@ -7,6 +7,20 @@ from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk import SnowballStemmer
 
+import re
+
+non_chars = re.compile('\W+')
+only_chars = re.compile('[A-Za-z]')
+
+
+def retrieve_model(t):
+    model_descr = ""
+    for token in t:
+        token_ = re.sub(non_chars, "", token)
+        # if re.search(only_chars, token_):
+        model_descr += token_
+    return model_descr.lower()
+
 # nltk stemmer is super slow,
 # I advise to run this code using pypy instead of regular python
 # with pypy it took around 30 minutes to run
@@ -21,10 +35,10 @@ class Tokenizer(object):
         Main method = @get_tokens
     """
     def __init__(self, language='russian'):
-        self.stopwords = set(stopwords.words(language)).union('. , ? ! ( )'.split())
+        self.stopwords = set(stopwords.words(language)).union('. , ? ! ( ) ` * ^ $ # @ + - ~ : ; < > ='.split())
         self.stemmer = SnowballStemmer('russian')
 
-    def get_tokens(self, s):
+    def get_tokens_and_model(self, s):
         """
             :param s
             :type str
@@ -32,13 +46,26 @@ class Tokenizer(object):
             :return list of str
             list of stemmed tokens
         """
-        return map(self._process_token, self._str2tokens(s))
+        model = []
+        text = []
+        for word in self._str2tokens(s):
+            token, is_model = self._process_token(word)
+            if is_model:
+                model.append(token)
+            else:
+                text.append(token)
+
+        return " ".join(text), "".join(model)
 
     def _str2tokens(self, s):
         return list(set(word_tokenize(s.lower())).difference(self.stopwords))
 
     def _process_token(self, token):
-        return self.stemmer.stem(token).encode('utf-8')
+        token_ = re.sub(non_chars, "", token)
+        if token_:
+            return token_, 1
+        else:
+            return self.stemmer.stem(token).encode('utf-8'), 0
 
 
 class DataGenerator(object):
@@ -87,31 +114,71 @@ class DataGenerator(object):
             with open(self.file_out) as f:
                 rdr = reader(f)
                 for row in rdr:
-                    yield row[1:]
+                    yield row[1].split()
         else:
             with open(self.file_in) as f:
                 rdr = DictReader(f)
                 for row in rdr:
-                    yield [row[self.id]] + self.tokenizer.get_tokens(unicode(row[self.column], 'utf-8'))
+                    yield [row[self.id]] + list(self.tokenizer.get_tokens_and_model(unicode(row[self.column], 'utf-8')))
+
+
+def merge_to_pairs(prefix):
+    import pandas as pd
+    pairs = pd.read_csv('data/ItemPairs_{}.csv'.format(prefix))
+    data1 = pd.read_csv('tmp/{}_description_tokens.csv'.format(prefix), header=None, index_col=0)
+    data2 = pd.read_csv('tmp/{}_title_tokens.csv'.format(prefix), header=None, index_col=0)
+    data1.columns = ["d_text", "d_model"]
+    data2.columns = ["t_text", "t_model"]
+    pairs.merge(
+        data1, how='left', left_on='itemID_1', right_index=True
+    ).merge(
+        data1, how='left', left_on='itemID_2', right_index=True, suffixes=('_1', '_2')
+    ).merge(
+        data2, how='left', left_on='itemID_1', right_index=True
+    ).merge(
+        data2, how='left', left_on='itemID_2', right_index=True, suffixes=('_1', '_2')
+    ).to_csv('tmp/ItemPairs_{}.csv'.format(prefix), index=False)
 
 
 if __name__ == '__main__':
-    tokens_stream = DataGenerator(
-        file_in='data/ItemInfo_test.csv',
-        column='title',
-        id='itemID',
-        chunksize=1,
-        file_out='tmp/test_title_tokens.csv',
-        rebuild=True
-    )
+    # tokens_stream = DataGenerator(
+    #     file_in='data/ItemInfo_test.csv',
+    #     column='title',
+    #     id='itemID',
+    #     chunksize=1,
+    #     file_out='tmp/test_title_tokens.csv',
+    #     rebuild=True
+    # )
+    #
+    # tokens_stream = DataGenerator(
+    #     file_in='data/ItemInfo_test.csv',
+    #     column='description',
+    #     id='itemID',
+    #     chunksize=1,
+    #     file_out='tmp/test_description_tokens.csv',
+    #     rebuild=True
+    # )
+    #
+    # tokens_stream = DataGenerator(
+    #     file_in='data/ItemInfo_train.csv',
+    #     column='title',
+    #     id='itemID',
+    #     chunksize=1,
+    #     file_out='tmp/train_title_tokens.csv',
+    #     rebuild=True
+    # )
+    #
+    # tokens_stream = DataGenerator(
+    #     file_in='data/ItemInfo_train.csv',
+    #     column='description',
+    #     id='itemID',
+    #     chunksize=1,
+    #     file_out='tmp/train_description_tokens.csv',
+    #     rebuild=True
+    # )
 
-    tokens_stream = DataGenerator(
-        file_in='data/ItemInfo_test.csv',
-        column='description',
-        id='itemID',
-        chunksize=1,
-        file_out='tmp/test_description_tokens.csv',
-        rebuild=True
-    )
+    merge_to_pairs('train')
+    merge_to_pairs('test')
+
     # then run on bash
     #  cat tmp/train_description_tokens.csv tmp/test_description_tokens.csv > tmp/description_tokens.csv
