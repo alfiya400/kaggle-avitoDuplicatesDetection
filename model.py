@@ -7,6 +7,7 @@ from sklearn.cross_validation import cross_val_score
 from sklearn.metrics import roc_auc_score, make_scorer
 from sklearn.base import BaseEstimator
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.feature_selection import VarianceThreshold
 from collections import defaultdict
 np.set_printoptions(suppress=True)
 
@@ -34,8 +35,8 @@ def load_category(prefix='train'):
 
 def basic_stats(data, labels, categ):
     print(pd.DataFrame(data).groupby(labels).describe())
-    categ_df = pd.DataFrame(np.concatenate((categ, labels.reshape((-1, 1))), axis=1), columns=['categ', 'label'])
-    print(categ_df.groupby('categ')['label'].sum())
+    # categ_df = pd.DataFrame(np.concatenate((categ, labels.reshape((-1, 1))), axis=1), columns=['categ', 'label'])
+    # print(categ_df.groupby('categ')['label'].sum())
 
 
 class MultEstimator(BaseEstimator):
@@ -79,9 +80,18 @@ if __name__ == '__main__':
     labels = load_labels()
     categ = load_category('train')
     basic_stats(data, labels, categ)
-    data[np.isnan(data)] = -1
 
-    model = RandomForestClassifier(min_samples_leaf=500, max_features=0.5)
+    data[np.isnan(data)] = -1
+    encoder = OneHotEncoder(handle_unknown='ignore', dtype=np.float16)
+    categ_sparse = encoder.fit_transform(categ)
+    varThr = VarianceThreshold(0.02)  # p * (1 - p), p = 10k / <train_nrows>
+    print(categ_sparse.shape)
+    train_categ = varThr.fit_transform(categ_sparse)
+    print(train_categ.shape)
+    print(data.shape)
+    data = np.concatenate((data, train_categ.todense()), axis=1)
+
+    model = GradientBoostingClassifier(min_samples_leaf=100, max_depth=8, subsample=0.5, max_features=0.5)
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
     cross_val = cross_val_score(estimator=model, X=data, y=labels, scoring=scorer, verbose=2, n_jobs=3)
     print(cross_val)
@@ -90,8 +100,11 @@ if __name__ == '__main__':
     print(roc_auc_score(labels, model.predict_proba(data)[:, 1]))
     print(model.feature_importances_)
     test = load_data('test')
-    test_categ = load_category('test')
+    test_categ = varThr.transform(encoder.transform(load_category('test')))
     test[np.isnan(test)] = -1
+
+    test = np.concatenate((test, test_categ.todense()), axis=1)
+
     pred = model.predict_proba(test)[:, 1]
     subm = pd.DataFrame(pred, columns=['probability'])
     subm.to_csv('submission.csv', index_label='id')
