@@ -26,10 +26,8 @@ def retrieve_model(t):
     return model_descr.lower()
 
 
-def model_sim(m1, m2):
-    # m1 = t1 # retrieve_model(t1)
-    # m2 = t2 # retrieve_model(t2)
-    return int((m1 in m2) or (m2 in m1))
+def model_sim(x):
+    return int((x[0] in x[1]) or (x[1] in x[0]))
 
 
 def exact_sim(x1, x2):
@@ -44,7 +42,7 @@ if __name__ == "__main__":
     for prefix in ['train', 'test']:
         data = pd.read_csv(
             'data/ItemInfo_{}.csv'.format(prefix), index_col='itemID',
-            usecols=["itemID", "lat", 'lon', 'price'], squeeze=True
+            usecols=["itemID", "lat", 'lon', 'price', 'images_array']
         )
         print(data.head(5))
 
@@ -53,28 +51,63 @@ if __name__ == "__main__":
         misc_similarity = []
         with open('tmp/{}_misc_similarity.csv'.format(prefix), "w") as f_out:
             w = writer(f_out)
-            with open('tmp/ItemPairs_{}.csv'.format(prefix)) as f:
+            pairs = pd.read_csv('tmp/ItemPairs_{}.csv'.format(prefix), chunksize=100000)
+            for i, chunk in enumerate(pairs):
+                chunk = chunk.merge(
+                    data, how='left', left_on='itemID_1', right_index=True
+                ).merge(
+                    data, how='left', left_on='itemID_2', right_index=True, suffixes=('_1', '_2')
+                )
+                nulls = pd.isnull(chunk)
 
-                dict_reader = DictReader(f)
-                for i, row in enumerate(dict_reader):
-                    i1, i2 = int(row['itemID_1']), int(row['itemID_2'])
-                    tl1, tl2 = len(row['t_text_1'].split()), len(row['t_text_2'].split())
-                    dl1, dl2 = len(row['d_text_1'].split()), len(row['d_text_2'].split())
-                    p1, p2 = data.loc[i1, 'price'], data.loc[i2, 'price']
-                    misc_similarity.append(
-                        [
-                            location_similarity(data.loc[i1, ["lat", "lon"]], data.loc[i1, ["lat", "lon"]]),
-                            min(dl1, dl2),
-                            min(tl1, tl2),
-                            model_sim(row['t_model_1'], row['t_model_2']),
-                            min(p1 / p2, p2 / p1) if p1 and p2 else -1 if not (p1 or p2) else -2
-                        ]
-                    )
-                    if not i % 100000:
-                        w.writerows(misc_similarity)
-                        misc_similarity = []
-                        print('{} {}'.format(i, time.time() - ts))
+                min_t_len = np.zeros((chunk.shape[0],))
+                min_t_len[nulls[['t_text_1', 't_text_2']].values.any(axis=1)] = -1
+                min_t_len[nulls[['t_text_1', 't_text_2']].values.all(axis=1)] = -2
+                not_null = ~nulls[['t_text_1', 't_text_2']].values.any(axis=1)
+                min_t_len[not_null] = np.minimum(
+                    chunk.loc[not_null, 't_text_1'].str.split().apply(lambda x: len(x)).values,
+                    chunk.loc[not_null, 't_text_2'].str.split().apply(lambda x: len(x)).values
+                )
 
-            w.writerows(misc_similarity)
+                min_d_len = np.zeros((chunk.shape[0],))
+                min_d_len[nulls[['d_text_1', 'd_text_2']].values.any(axis=1)] = -1
+                min_d_len[nulls[['d_text_1', 'd_text_2']].values.all(axis=1)] = -2
+                not_null = ~nulls[['d_text_1', 'd_text_2']].values.any(axis=1)
+                min_d_len[not_null] = np.minimum(
+                    chunk.loc[not_null, 'd_text_1'].str.split().apply(lambda x: len(x or [])).values,
+                    chunk.loc[not_null, 'd_text_2'].str.split().apply(lambda x: len(x or [])).values
+                )
+
+                price_ratio = np.zeros((chunk.shape[0],))
+                price_ratio[nulls[['price_1', 'price_2']].values.any(axis=1)] = -1
+                price_ratio[nulls[['price_1', 'price_2']].values.all(axis=1)] = -2
+                not_null = ~nulls[['price_1', 'price_2']].values.any(axis=1)
+                price_ratio[not_null] =\
+                    np.minimum(chunk.loc[not_null, 'price_1'].values, chunk.loc[not_null, "price_2"].values) / \
+                    (np.maximum(chunk.loc[not_null, 'price_2'].values, chunk.loc[not_null, "price_1"].values) + 1)
+
+                m_sim = np.zeros((chunk.shape[0],))
+                m_sim[nulls[['t_model_1', 't_model_2']].values.any(axis=1)] = -1
+                m_sim[nulls[['t_model_1', 't_model_2']].values.all(axis=1)] = -2
+                not_null = ~nulls[['t_model_1', 't_model_2']].values.any(axis=1)
+                m_sim[not_null] =\
+                    chunk.loc[not_null, ['t_model_1', 't_model_2']].apply(model_sim, axis=1, raw=True).values
+
+                i_sim = np.zeros((chunk.shape[0],))
+                i_sim[nulls[['images_array_1', 'images_array_2']].values.any(axis=1)] = -1
+                i_sim[nulls[['images_array_1', 'images_array_2']].values.all(axis=1)] = -2
+
+                misc_similarity = np.concatenate(
+                    (
+                        min_d_len.reshape((-1, 1)),
+                        min_t_len.reshape((-1, 1)),
+                        m_sim.reshape((-1, 1)),
+                        price_ratio.reshape((-1, 1)),
+                        i_sim.reshape((-1, 1))
+                    ),
+                    axis=1
+                ).tolist()
+                w.writerows(misc_similarity)
+                print('{} {}'.format(i, time.time() - ts))
 
 
