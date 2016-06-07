@@ -1,16 +1,18 @@
+from datetime import datetime
 import pandas as pd
 import numpy as np
+
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier, BaggingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
+from xgboost import XGBClassifier
+
+from sklearn.base import BaseEstimator
 from sklearn.cross_validation import cross_val_score, train_test_split
 from sklearn.metrics import roc_auc_score, make_scorer
-from sklearn.base import BaseEstimator
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.feature_selection import VarianceThreshold
-from collections import defaultdict
-from datetime import datetime
+
 np.set_printoptions(suppress=True)
 
 
@@ -82,59 +84,55 @@ class MultEstimator(BaseEstimator):
 
 class CombinedModel(BaseEstimator):
     def fit(self, X, y):
-        self.model1 = DecisionTreeClassifier(min_samples_leaf=1000, max_depth=8)
-        self.model2 = DecisionTreeClassifier(min_samples_leaf=1000, max_depth=8)
-        self.model3 = DecisionTreeClassifier(min_samples_leaf=1000, max_depth=8)
-        self.model4 = BaggingClassifier(DecisionTreeClassifier(min_samples_leaf=100, max_depth=8), bootstrap=False, max_samples=0.5, max_features=0.5)
+        # 0.791, 0.822, 0.782
+        self.model1 = GradientBoostingClassifier(n_estimators=300, min_samples_leaf=1000, max_depth=5, subsample=0.5, max_features=1)
+        self.model2 = GradientBoostingClassifier(n_estimators=300, min_samples_leaf=1000, max_depth=5, subsample=0.5, max_features=1)
+        # self.model3 = DecisionTreeClassifier(min_samples_leaf=100, max_depth=8)
+        self.model3 = GradientBoostingClassifier(n_estimators=300, min_samples_leaf=1000, max_depth=5, subsample=0.5, max_features=0.5)
 
-        X1 = X[:, :3]
-        X2 = X[:, 3:6]
-        X3 = X[:, 6:8]
-        X4 = X[:, 8:]
-        X1_, _, y1, _ = train_test_split(X[:, :3], y, test_size=0.5)  # topics
-        X2_, _, y2, _ = train_test_split(X[:, 3:6], y, test_size=0.5)  # other
-        X3_, _, y3, _ = train_test_split(X[:, 6:8], y, test_size=0.5)  # image sim
-        X4_, _, y4, _ = train_test_split(X[:, 8:], y, test_size=0.5)  # categories
+        X1 = X[:, :6]
+        # X3_1 = X[:, 6:8]
+        X2 = X[:, 8:10]
+        X3 = np.concatenate((X[:, 10:], X[:, 6:8]), axis=1)
+        X1_, _, y1, _ = train_test_split(X1, y, test_size=0.5)  # topics
+        X2_, _, y2, _ = train_test_split(X2, y, test_size=0.5)  # other
+        X3_, _, y3, _ = train_test_split(X3, y, test_size=0.5)  # image sim
+        # X4_, _, y4, _ = train_test_split(X4, y, test_size=0.5)  # categories
 
-        # print('model1', datetime.now())
         self.model1.fit(X1_, y1)
-        # print('model2', datetime.now())
         self.model2.fit(X2_, y2)
-        # print('model3', datetime.now())
         self.model3.fit(X3_, y3)
-        # print('model4', datetime.now())
-        self.model4.fit(X4_, y4)
+        # self.model4.fit(X4_, y4)
         print(
             roc_auc_score(y, self.model1.predict_proba(X1)[:, 1]),
             roc_auc_score(y, self.model2.predict_proba(X2)[:, 1]),
             roc_auc_score(y, self.model3.predict_proba(X3)[:, 1]),
-            roc_auc_score(y, self.model4.predict_proba(X4)[:, 1])
+            # roc_auc_score(y, self.model4.predict_proba(X4)[:, 1])
         )
-        self.model = BaggingClassifier(SVC(kernel='poly'), max_samples=0.05, verbose=1) # GradientBoostingClassifier(n_estimators=100, min_samples_leaf=100, max_depth=8, subsample=0.5, max_features=0.5)
+        self.model = GradientBoostingClassifier(n_estimators=300, min_samples_leaf=100, max_depth=8, subsample=0.5, max_features=1)
         self.model.fit(
             np.concatenate(
                 (
                     self.model1.predict_proba(X1)[:, [1]],
                     self.model2.predict_proba(X2)[:, [1]],
                     self.model3.predict_proba(X3)[:, [1]],
-                    self.model4.predict_proba(X4)[:, [1]]
+                    # self.model4.predict_proba(X4)[:, [1]]
                 ),
                 axis=1),
             y
         )
 
     def predict_proba(self, X):
-        X1 = X[:, :3]  # topics
-        X2 = X[:, 3:6]  # other
-        X3 = X[:, 6:8]  # image sim
-        X4 = X[:, 8:]  # categories
+        X1 = X[:, :6]  # topics & attr_json
+        X2 = X[:, 8:10]  # image
+        X3 = np.concatenate((X[:, 10:], X[:, 6:8]), axis=1)  # price + categories
         return self.model.predict_proba(
             np.concatenate(
                 (
                     self.model1.predict_proba(X1)[:, [1]],
                     self.model2.predict_proba(X2)[:, [1]],
                     self.model3.predict_proba(X3)[:, [1]],
-                    self.model4.predict_proba(X4)[:, [1]]
+                    # self.model4.predict_proba(X4)[:, [1]]
                 ),
                 axis=1)
         )
@@ -144,15 +142,20 @@ class CombinedModel(BaseEstimator):
         print(
             self.model1.feature_importances_,
             self.model2.feature_importances_,
-            self.model3.feature_importances_
+            self.model3.feature_importances_,
+            # self.model4.feature_importances_
         )
         return self.model.feature_importances_ if hasattr(self.model, "feature_importances_")\
             else self.model._get_coef if hasattr(self.model, "_get_coef") else None
 
 if __name__ == '__main__':
+    s = datetime.now()
     data = load_data('train')
+    print('data {}'.format(datetime.now() - s))
     labels = load_labels()
+    print('labels {}'.format(datetime.now() - s))
     categ = load_category('train')
+    print('category {}'.format(datetime.now() - s))
     basic_stats(data, labels, categ)
 
     data[np.isnan(data)] = -1
@@ -166,9 +169,10 @@ if __name__ == '__main__':
     data = np.concatenate((data, train_categ.todense()), axis=1)
     # data = np.concatenate((data, categ), axis=1)
 
-    model = CombinedModel()
+    # 0.93921317 combined - 0.92925244   0.924
+    model = GradientBoostingClassifier(min_samples_leaf=100, max_depth=8, subsample=0.5)  # CombinedModel()
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
-    cross_val = cross_val_score(estimator=model, X=data, y=labels, scoring=scorer, verbose=2, n_jobs=3)
+    cross_val = cross_val_score(estimator=model, X=data, y=labels, scoring=scorer, verbose=2)
     print(cross_val)
 
     model.fit(data, labels)
