@@ -1,3 +1,4 @@
+# coding=utf-8
 from csv import DictReader, writer, reader
 from itertools import chain, islice
 from os.path import basename, splitext
@@ -10,6 +11,8 @@ from nltk import SnowballStemmer
 import re
 
 non_chars = re.compile('\W+')
+non_russian = re.compile(unicode('[^йцукенгшщзхъфывапролджэячсмитьбюЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ]', 'utf-8'))
+# non_russian = re.compile(u'[^\u0439\u0446\u0443\u043a\u0435\u043d\u0433\u0448\u0449\u0437\u0445\u044a\u0444\u044b\u0432\u0430\u043f\u0440\u043e\u043b\u0434\u0436\u044d\u044f\u0447\u0441\u043c\u0438\u0442\u044c\u0431\u044e\u0419\u0426\u0423\u041a\u0415\u041d\u0413\u0428\u0429\u0417\u0425\u042a\u0424\u042b\u0412\u0410\u041f\u0420\u041e\u041b\u0414\u0416\u042d\u042f\u0427\u0421\u041c\u0418\u0422\u042c\u0411\u042e]')
 only_chars = re.compile('[A-Za-z]')
 
 
@@ -50,10 +53,11 @@ class Tokenizer(object):
         text = []
         for word in self._str2tokens(s):
             token, is_model = self._process_token(word)
-            if is_model:
-                model.append(token)
-            else:
-                text.append(token)
+            if token is not None:
+                if is_model:
+                    model.append(token)
+                else:
+                    text.append(token)
 
         return " ".join(text), "".join(model)
 
@@ -65,7 +69,11 @@ class Tokenizer(object):
         if token_:
             return token_, 1
         else:
-            return self.stemmer.stem(token).encode('utf-8'), 0
+            token_ = re.sub(non_russian, "", token)
+            if token_:
+                return self.stemmer.stem(token).encode('utf-8'), 0
+            else:
+                return None, None
 
 
 class DataGenerator(object):
@@ -114,7 +122,7 @@ class DataGenerator(object):
             with open(self.file_out) as f:
                 rdr = reader(f)
                 for row in rdr:
-                    yield row[1].split()
+                    yield unicode(row[1], 'utf-8').split()
         else:
             with open(self.file_in) as f:
                 rdr = DictReader(f)
@@ -141,44 +149,44 @@ def merge_to_pairs(prefix):
 
 
 if __name__ == '__main__':
-    # tokens_stream = DataGenerator(
-    #     file_in='data/ItemInfo_test.csv',
-    #     column='title',
-    #     id='itemID',
-    #     chunksize=1,
-    #     file_out='tmp/test_title_tokens.csv',
-    #     rebuild=True
-    # )
-    #
-    # tokens_stream = DataGenerator(
-    #     file_in='data/ItemInfo_test.csv',
-    #     column='description',
-    #     id='itemID',
-    #     chunksize=1,
-    #     file_out='tmp/test_description_tokens.csv',
-    #     rebuild=True
-    # )
-    #
-    # tokens_stream = DataGenerator(
-    #     file_in='data/ItemInfo_train.csv',
-    #     column='title',
-    #     id='itemID',
-    #     chunksize=1,
-    #     file_out='tmp/train_title_tokens.csv',
-    #     rebuild=True
-    # )
-    #
-    # tokens_stream = DataGenerator(
-    #     file_in='data/ItemInfo_train.csv',
-    #     column='description',
-    #     id='itemID',
-    #     chunksize=1,
-    #     file_out='tmp/train_description_tokens.csv',
-    #     rebuild=True
-    # )
+    tokens_stream = DataGenerator(
+        file_in='data/ItemInfo_test.csv',
+        column='title',
+        id='itemID',
+        chunksize=1,
+        file_out='tmp/test_title_tokens.csv',
+        rebuild=True
+    )
 
-    merge_to_pairs('train')
-    merge_to_pairs('test')
+    tokens_stream = DataGenerator(
+        file_in='data/ItemInfo_test.csv',
+        column='description',
+        id='itemID',
+        chunksize=1,
+        file_out='tmp/test_description_tokens.csv',
+        rebuild=True
+    )
+
+    tokens_stream = DataGenerator(
+        file_in='data/ItemInfo_train.csv',
+        column='title',
+        id='itemID',
+        chunksize=1,
+        file_out='tmp/train_title_tokens.csv',
+        rebuild=True
+    )
+
+    tokens_stream = DataGenerator(
+        file_in='data/ItemInfo_train.csv',
+        column='description',
+        id='itemID',
+        chunksize=1,
+        file_out='tmp/train_description_tokens.csv',
+        rebuild=True
+    )
+
+    # merge_to_pairs('train')
+    # merge_to_pairs('test')
 
     # then run on bash
     #  cat tmp/train_description_tokens.csv tmp/test_description_tokens.csv > tmp/description_tokens.csv

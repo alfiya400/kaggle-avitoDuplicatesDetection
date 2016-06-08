@@ -170,7 +170,7 @@ if __name__ == '__main__':
     # data = np.concatenate((data, categ), axis=1)
 
     # 0.93921317 combined - 0.92925244   0.924
-    model = GradientBoostingClassifier(min_samples_leaf=100, max_depth=8, subsample=0.5)  # CombinedModel()
+    model = GradientBoostingClassifier(min_samples_leaf=100, max_depth=8, subsample=0.5, max_features=0.5)  # CombinedModel()
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
     cross_val = cross_val_score(estimator=model, X=data, y=labels, scoring=scorer, verbose=2)
     print(cross_val)

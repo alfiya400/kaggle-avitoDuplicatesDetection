@@ -127,7 +127,11 @@ if __name__ == '__main__':
         rebuild=False
     )
     # dict_ = Dictionary(tokens_stream)
-    tfidf = TfidfCorpus(tokens_stream, dictionary='tmp/train.dict')
-    lsi = models.LsiModel(tfidf.corpus, id2word=tfidf.dictionary.dictionary, num_topics=400)
-    lsi.print_topics()
-    lsi.save('tmp/model.lsi')
+    # tfid f = TfidfCorpus(tokens_stream, dictionary='tmp/train.dict')
+    # lsi = models.LsiModel(tfidf.corpus, id2word=tfidf.dictionary.dictionary, num_topics=400)
+    # lsi.print_topics()
+    # lsi.save('tmp/model.lsi')
+
+    doc2vec = models.Word2Vec(sentences=tokens_stream, size=300, min_count=100)
+    doc2vec.save('tmp/model.w2v')
+    print(len(doc2vec.vocab))
