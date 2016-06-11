@@ -169,15 +169,18 @@ if __name__ == '__main__':
     data = np.concatenate((data, train_categ.todense()), axis=1)
     # data = np.concatenate((data, categ), axis=1)
 
-    # 0.93921317 combined - 0.92925244   0.924
-    model = GradientBoostingClassifier(min_samples_leaf=100, max_depth=8, subsample=0.5, max_features=0.5)  # CombinedModel()
+    # 0.94025061
+    model = XGBClassifier(n_estimators=200, min_child_weight=100, max_depth=8, subsample=0.5, colsample_bytree=0.5)  # GradientBoostingClassifier(min_samples_leaf=100, max_depth=8, subsample=0.5, max_features=0.5)  # CombinedModel()
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
-    cross_val = cross_val_score(estimator=model, X=data, y=labels, scoring=scorer, verbose=2)
+    cross_val = cross_val_score(estimator=model, X=data, y=labels, scoring=scorer, verbose=2, n_jobs=3)
     print(cross_val)
 
     model.fit(data, labels)
-    print(roc_auc_score(labels, model.predict_proba(data)[:, 1]))
-    print(model.feature_importances_)
+    print('total train score', roc_auc_score(labels, model.predict_proba(data)[:, 1]))
+    for c in np.unique(categ):
+        is_c = categ.ravel() == c
+        print(c, roc_auc_score(labels[is_c], model.predict_proba(data[is_c])[:, 1]))
+    # print(model.feature_importances_)
     test = load_data('test')
     categ = load_category('test')
     test_categ = varThr.transform(encoder.transform(categ))

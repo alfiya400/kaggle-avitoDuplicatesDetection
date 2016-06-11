@@ -5,15 +5,44 @@ from gensim import models, corpora
 from gensim.matutils import cossim
 import pandas as pd
 
-from tokens_to_lsi import timeit
+from tokens_to_vec import timeit
 
 
 # dictionary = corpora.Dictionary.load('tmp/train.dict')
 # tfidf = models.TfidfModel.load('tmp/train.tfidf')
 # lsi = models.LsiModel.load('tmp/model.lsi')
 model = models.Word2Vec.load('tmp/model.w2v')
-# def tokens_to_lsi(s):
-#     return lsi[tfidf[dictionary.doc2bow(s)]]
+
+lsi = None
+tfidf = None
+dictionary = None
+
+
+def tokens_to_lsi(s):
+    return lsi[tfidf[dictionary.doc2bow(s)]]
+
+
+def cosine_sim(x1, x2):
+    if not x1 or not x2:
+        return -3
+    elif not x1 or not x2:
+        return -2
+    else:
+        return cossim(
+            tokens_to_lsi(unicode(x1, 'utf-8').split()),
+            tokens_to_lsi(unicode(x2, 'utf-8').split())
+        )
+
+
+def word2vec_similarity(x1, x2):
+    if not x1 or not x2:
+        return -3
+    elif not x1 or not x2:
+        return -2
+    else:
+        x1 = [w for w in unicode(x1, 'utf-8').split() if w in model.vocab]
+        x2 = [w for w in unicode(x2, 'utf-8').split() if w in model.vocab]
+        return model.n_similarity(x1, x2) if x1 and x2 else 0
 
 
 def description_similarity(d1, d2):
@@ -67,8 +96,8 @@ if __name__ == '__main__':
                     i1, i2 = int(row['itemID_1']), int(row['itemID_2'])
                     text_similarity.append(
                         [
-                            description_similarity(row['d_text_1'], row['d_text_2']),
-                            title_similarity(row['t_text_1'], row['t_text_2'])
+                            word2vec_similarity(row['d_text_1'], row['d_text_2']),
+                            word2vec_similarity(row['t_text_1'], row['t_text_2'])
                         ]
                     )
                     if not i % 100000:

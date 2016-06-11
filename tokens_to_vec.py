@@ -52,8 +52,11 @@ class Dictionary(object):
         dictionary = corpora.Dictionary()
         ts = time.time()
         for i, chunk in enumerate(self.tokens_stream):
-            print('chunk {} retrieved {}'.format(i, time.time() - ts))
-            dictionary.add_documents(chunk, prune_at=None)
+            # print('chunk {} retrieved {}'.format(i, time.time() - ts))
+            if isinstance(chunk[0], list):
+                dictionary.add_documents([chunk], prune_at=None)
+            else:
+                dictionary.add_documents([chunk], prune_at=None)
         dictionary.filter_extremes(no_below=50, no_above=0.8, keep_n=None)
         dictionary.save(self.output_file)
 
@@ -127,11 +130,12 @@ if __name__ == '__main__':
         rebuild=False
     )
     # dict_ = Dictionary(tokens_stream)
-    # tfid f = TfidfCorpus(tokens_stream, dictionary='tmp/train.dict')
+    # tfidf = TfidfCorpus(tokens_stream, dictionary='tmp/train.dict')
     # lsi = models.LsiModel(tfidf.corpus, id2word=tfidf.dictionary.dictionary, num_topics=400)
     # lsi.print_topics()
     # lsi.save('tmp/model.lsi')
 
-    doc2vec = models.Word2Vec(sentences=tokens_stream, size=300, min_count=100)
-    doc2vec.save('tmp/model.w2v')
-    print(len(doc2vec.vocab))
+    st = time.time()
+    word2vec = models.Word2Vec(sentences=tokens_stream, size=400, min_count=100, sg=1, workers=3)
+    word2vec.save('tmp/model.w2v')
+    print(len(word2vec.vocab), time.time() - st)
