@@ -41,14 +41,14 @@ def exact_sim(x1, x2):
 def json_sim(x):
     x1 = set(loads(x[0]).items())
     x2 = set(loads(x[1]).items())
-    return float(len(x1.intersection(x2))) / min(len(x1), len(x2))
+    return float(len(x1.intersection(x2))) / len(x1.union(x2))
 
 
 if __name__ == "__main__":
     for prefix in ['train', 'test']:
         data = pd.read_csv(
             'data/ItemInfo_{}.csv'.format(prefix), index_col='itemID',
-            usecols=["itemID", "lat", 'lon', 'price', 'images_array', 'attrsJSON']
+            usecols=["itemID", "lat", 'lon', 'price', 'images_array', 'attrsJSON', 'metroID', 'locationID']
         )
         print(data.head(5))
 
@@ -109,9 +109,23 @@ if __name__ == "__main__":
                 m_sim[not_null] =\
                     chunk.loc[not_null, ['t_model_1', 't_model_2']].apply(model_sim, axis=1, raw=True).values
 
-                i_sim = np.zeros((chunk.shape[0],))
-                i_sim[nulls[['images_array_1', 'images_array_2']].values.any(axis=1)] = -1
-                i_sim[nulls[['images_array_1', 'images_array_2']].values.all(axis=1)] = -2
+                met_sim = np.zeros((chunk.shape[0],))
+                met_sim[nulls[['metroID_1', 'metroID_2']].values.any(axis=1)] = -1
+                met_sim[nulls[['metroID_1', 'metroID_2']].values.all(axis=1)] = -2
+                not_null = ~nulls[['metroID_1', 'metroID_2']].values.any(axis=1)
+                met_sim[not_null] =\
+                    (chunk.loc[not_null, 'metroID_1'].values == chunk.loc[not_null, 'metroID_2'].values).astype(np.int8)
+
+                loc_sim = np.zeros((chunk.shape[0],))
+                loc_sim[nulls[['locationID_1', 'locationID_2']].values.any(axis=1)] = -1
+                loc_sim[nulls[['locationID_1', 'locationID_2']].values.all(axis=1)] = -2
+                not_null = ~nulls[['locationID_1', 'locationID_2']].values.any(axis=1)
+                loc_sim[not_null] =\
+                    (chunk.loc[not_null, 'locationID_1'].values == chunk.loc[not_null, 'locationID_2'].values).astype(np.int8)
+                #
+                # i_sim = np.zeros((chunk.shape[0],))
+                # i_sim[nulls[['images_array_1', 'images_array_2']].values.any(axis=1)] = -1
+                # i_sim[nulls[['images_array_1', 'images_array_2']].values.all(axis=1)] = -2
 
                 misc_similarity = np.concatenate(
                     (
@@ -121,7 +135,8 @@ if __name__ == "__main__":
                         attr_sim.reshape((-1, 1)),
                         price_ratio.reshape((-1, 1)),
                         price_min.reshape((-1, 1)),
-                        i_sim.reshape((-1, 1))
+                        met_sim.reshape((-1, 1)),
+                        loc_sim.reshape((-1, 1))
                     ),
                     axis=1
                 ).tolist()

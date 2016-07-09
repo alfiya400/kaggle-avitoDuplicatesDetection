@@ -1,4 +1,6 @@
 from datetime import datetime
+from csv import reader
+from keras.layers.core import Dropout
 import pandas as pd
 import numpy as np
 
@@ -7,7 +9,7 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier,
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.cross_validation import cross_val_score, train_test_split
 from sklearn.metrics import roc_auc_score, make_scorer
 from sklearn.preprocessing import OneHotEncoder
@@ -16,11 +18,30 @@ from sklearn.feature_selection import VarianceThreshold
 np.set_printoptions(suppress=True)
 
 
+def load_image_sim(dataset='train'):
+    res = []
+    with open('tmp/{}_images_array_sims.csv'.format(dataset)) as f:
+        r = reader(f)
+        for row in r:
+            if row[0] in ('-1', '-2'):
+                res.append([int(row[0])]*2)
+            else:
+                i, j = int(row.pop(0)), int(row.pop(0))
+                if i < j:
+                    imsim = np.array(row, dtype=float) #.reshape((i, j)).max(axis=1)
+                else:
+                    imsim = np.array(row, dtype=float) #.reshape((i, j)).max(axis=0)
+                s1 = imsim[imsim > 0.6].size
+                s2 = imsim[imsim > 0.9].size
+                res.append([float(s1) / (imsim.size - s1), float(s2) / (imsim.size - s2), min(i, j), min(float(i)/j, float(j)/i)])
+    return np.array(res)
+
+
 def load_data(dataset='train'):
     text = np.loadtxt('tmp/{}_text_similarity.csv'.format(dataset), delimiter=',')
     misc = np.loadtxt('tmp/{}_misc_similarity.csv'.format(dataset), delimiter=',')
-    images = np.loadtxt('tmp/{}_image_similarity.csv'.format(dataset), delimiter=',')
-    return np.concatenate((text, misc, images.reshape((-1, 1))), axis=1)
+    images = load_image_sim(dataset)
+    return np.concatenate((text, misc, images), axis=1)
 
 
 def load_labels():
@@ -39,10 +60,24 @@ def load_category(prefix='train'):
     return categ[['parentCategoryID']].values
 
 
-def basic_stats(data, labels, categ):
+def load_region(prefix='train'):
+    pairs = pd.read_csv('data/ItemPairs_{}.csv'.format(prefix), index_col='itemID_1', usecols=['itemID_1'], squeeze=True)
+    categ = pd.read_csv(
+        'data/ItemInfo_{}.csv'.format(prefix), index_col='itemID',
+        usecols=["itemID", 'locationID'], squeeze=True
+    )
+    categ_map = pd.read_csv('data/Location.csv', index_col='locationID')
+    categ = pairs.join(categ).merge(categ_map, how='left', left_on='locationID', right_index=True)
+    return categ[['regionID']].values
+
+
+def basic_stats(data, labels, categ, region):
     print(pd.DataFrame(data).groupby(labels).describe())
     categ_df = pd.DataFrame(np.concatenate((categ, labels.reshape((-1, 1))), axis=1), columns=['categ', 'label'])
     print(categ_df.groupby('categ')['label'].agg(['mean', 'count']))
+    df = pd.DataFrame(np.concatenate((region, labels.reshape((-1, 1))), axis=1), columns=['c', 'l']).groupby('c')['l'].agg(['mean', 'count'])
+    keep = (((df['mean'] <= 0.4) | (df['mean'] >= 0.55)) & (df['count'] > 10000)).values
+    print(df[keep])
 
 
 class MultEstimator(BaseEstimator):
@@ -51,13 +86,13 @@ class MultEstimator(BaseEstimator):
 
     def fit(self, X, y, **params):
         self.models = {_: None for _ in self.categories}
-        self.tot_model = DecisionTreeClassifier(max_depth=8, min_samples_leaf=1000)
+        self.tot_model = XGBClassifier(min_child_weight=100, max_depth=8, subsample=0.5, colsample_bytree=0.5)
         categ = X[:, -1]
         data = X[:, :-1]
         self.tot_model.fit(data, y)
         for c in self.models.keys():
             mask = categ == c
-            m = GradientBoostingClassifier(min_samples_leaf=1000, max_depth=5, subsample=0.5, max_features=0.5)
+            m = XGBClassifier(n_estimators=200, min_child_weight=100, max_depth=8, subsample=0.5, colsample_bytree=0.5)
             m.fit(data[mask], y[mask])
             self.models[c] = m
 
@@ -80,6 +115,32 @@ class MultEstimator(BaseEstimator):
             if mask.any():
                 p[mask] = self.models[c].predict_proba(data[mask])
         return p
+
+
+class toDummies(BaseEstimator, TransformerMixin):
+    def __init__(self, var_threshold=0.02):
+        self.var_threshold = var_threshold
+
+    def fit(self, X, y=None, **kwargs):
+        X = X.copy()
+        if y is not None:
+            df = pd.DataFrame(np.concatenate((X, y.reshape((-1, 1))), axis=1), columns=['c', 'l']).groupby('c')['l'].mean()
+            m1, m2 = 0.4, 0.55
+            ignore = df[(df <= m2) & (df >= m1)].index.values
+            mask = np.in1d(X.ravel(), ignore)
+            X[mask] = 0
+
+        self.encoder = OneHotEncoder(handle_unknown='ignore', dtype=np.float16)
+        dummies = self.encoder.fit_transform(X)
+        print(dummies.shape)
+        self.varThr = VarianceThreshold(self.var_threshold)
+        self.varThr.fit(dummies)
+        return self
+
+    def transform(self, X, y=None, **kwargs):
+        cut_dummies = self.varThr.fit_transform(self.encoder.transform(X))
+        print(cut_dummies.shape)
+        return cut_dummies
 
 
 class CombinedModel(BaseEstimator):
@@ -156,21 +217,32 @@ if __name__ == '__main__':
     print('labels {}'.format(datetime.now() - s))
     categ = load_category('train')
     print('category {}'.format(datetime.now() - s))
-    basic_stats(data, labels, categ)
+    region = load_region('train')
+    print('region {}'.format(datetime.now() - s))
+    basic_stats(data, labels, categ, region)
 
     data[np.isnan(data)] = -1
-    encoder = OneHotEncoder(handle_unknown='ignore', dtype=np.float16)
-    categ_sparse = encoder.fit_transform(categ)
-    varThr = VarianceThreshold(0.02)  # p * (1 - p), p = 10k / <train_nrows>
-    print(categ_sparse.shape)
-    train_categ = varThr.fit_transform(categ_sparse)
-    print(train_categ.shape)
+    categ_transformer = toDummies(0.02)
+    categ_transformer.fit(categ)
+
+    region_transformer = toDummies(0.01)
+    region_transformer.fit(region)
+    data = np.concatenate((
+        data,
+        categ_transformer.transform(categ).todense(),
+        region_transformer.transform(region).todense()
+    ), axis=1)
     print(data.shape)
-    data = np.concatenate((data, train_categ.todense()), axis=1)
     # data = np.concatenate((data, categ), axis=1)
 
     # 0.94025061
-    model = XGBClassifier(n_estimators=200, min_child_weight=100, max_depth=8, subsample=0.5, colsample_bytree=0.5)  # GradientBoostingClassifier(min_samples_leaf=100, max_depth=8, subsample=0.5, max_features=0.5)  # CombinedModel()
+    model = XGBClassifier(
+        n_estimators=200,
+        max_depth=5,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        base_score=labels.mean(),
+        gamma=1.)  # CombinedModel()
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
     cross_val = cross_val_score(estimator=model, X=data, y=labels, scoring=scorer, verbose=2, n_jobs=3)
     print(cross_val)
@@ -179,14 +251,24 @@ if __name__ == '__main__':
     print('total train score', roc_auc_score(labels, model.predict_proba(data)[:, 1]))
     for c in np.unique(categ):
         is_c = categ.ravel() == c
-        print(c, roc_auc_score(labels[is_c], model.predict_proba(data[is_c])[:, 1]))
-    # print(model.feature_importances_)
+        p = model.predict_proba(data[is_c])[:, 1]
+        print(c, roc_auc_score(labels[is_c], p))
+        if c == 110:
+            mis_class = labels[is_c] != (p > 0.5)
+            print(pd.Series(p).describe())
+            # print(pd.read_csv('tmp/ItemPairs_train.csv')[is_c][mis_class])
+
+    print(model.feature_importances_)
     test = load_data('test')
     categ = load_category('test')
-    test_categ = varThr.transform(encoder.transform(categ))
+    region = load_region('test')
     test[np.isnan(test)] = -1
 
-    test = np.concatenate((test, test_categ.todense()), axis=1)
+    test = np.concatenate((
+        test,
+        categ_transformer.transform(categ).todense(),
+        region_transformer.transform(region).todense()
+    ), axis=1)
     # test = np.concatenate((test, categ), axis=1)
     pred = model.predict_proba(test)[:, 1]
     subm = pd.DataFrame(pred, columns=['probability'])
